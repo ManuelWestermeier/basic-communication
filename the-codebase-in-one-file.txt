@@ -1,0 +1,120 @@
+
+//filepath: src\main.cpp
+#include <Arduino.h>
+
+#include "./user.hpp"
+
+#include "./send-byte.hpp"
+#include "./read-byte.hpp"
+
+#include "./wait-for-header.hpp"
+
+#define DATA_PIN 25
+#define DEFAULT_SEND_FREQUENCY 500
+
+void setup()
+{
+    Serial.begin(115200);
+    Serial.println(IS_SENDING ? "SENDER" : "RECIEVER");
+
+    pinMode(DATA_PIN, IS_SENDING ? OUTPUT : INPUT);
+}
+
+void loop()
+{
+#if IS_SENDING
+    sendByte(0b11110000, DATA_PIN, DEFAULT_SEND_FREQUENCY);
+    sendByte(0b11110000, DATA_PIN, DEFAULT_SEND_FREQUENCY);
+    sendByte(123, DATA_PIN, DEFAULT_SEND_FREQUENCY);
+    Serial.println("SENDED: 123");
+#else
+    waitForHeader(0b1111000011110000, DATA_PIN, DEFAULT_SEND_FREQUENCY);
+    Serial.println("RECIVED: " + String(readByte(DATA_PIN, DEFAULT_SEND_FREQUENCY)));
+#endif
+}
+
+//filepath: src\read-byte.hpp
+#pragma once
+
+#include <Arduino.h>
+
+// Reads 8 bits from the specified pin and returns them as a byte
+uint8_t readByte(int pin, int delayTime)
+{
+    uint8_t out = 0;
+
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        // Shift left and set the current bit if pin reads HIGH
+        out |= (digitalRead(pin) == HIGH) << i;
+
+        // Delay for the specified time
+        delay(delayTime);
+    }
+
+    return out;
+}
+
+//filepath: src\send-byte.hpp
+#pragma once
+
+#include <Arduino.h>
+
+// Sends a byte one bit at a time over a digital pin
+void sendByte(uint8_t value, int pin, int delayTime)
+{
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        // Extract the bit at position `i`
+        bool bit = (value & (1 << i)) != 0;
+
+        // Write HIGH or LOW to the pin
+        digitalWrite(pin, bit ? HIGH : LOW);
+
+        // Delay for the specified time
+        delay(delayTime);
+    }
+}
+
+//filepath: src\user.hpp
+#pragma once
+// Don't edit this file
+#define IS_SENDING false
+
+
+//filepath: src\wait-for-header.hpp
+#pragma once
+
+#include <Arduino.h>
+
+// Waits for a specific 16-bit header sequence on the specified pin
+void waitForHeader(uint16_t header, int pin, int delayTime)
+{
+    uint16_t headerReceived = 0;
+
+    // Pre-fill headerReceived by reading the first 15 bits
+    for (int receivedIndex = 0; receivedIndex < 15; receivedIndex++)
+    {
+        // Shift left and read the next bit
+        headerReceived = (headerReceived << 1) | (digitalRead(pin) == HIGH);
+
+        // Wait for the specified time
+        delay(delayTime);
+    }
+
+    // Continuously read bits until the header is matched
+    while (true)
+    {
+        // Shift left and add the next bit
+        headerReceived = (headerReceived << 1) | (digitalRead(pin) == HIGH);
+
+        // Check if the header matches
+        if (headerReceived == header)
+        {
+            return; // Header detected
+        }
+
+        // Wait for the specified time
+        delay(delayTime);
+    }
+}
