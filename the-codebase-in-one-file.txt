@@ -1,16 +1,13 @@
 
 //filepath: src\main.cpp
 #include <Arduino.h>
-
 #include "./user.hpp"
-
 #include "./send-byte.hpp"
 #include "./read-byte.hpp"
-
 #include "./wait-for-header.hpp"
 
 #define DATA_PIN 25
-#define DEFAULT_SEND_FREQUENCY 500
+#define DEFAULT_SEND_FREQUENCY 700 // Increased delay for better timing
 
 void setup()
 {
@@ -18,6 +15,8 @@ void setup()
     Serial.println(IS_SENDING ? "SENDER" : "RECIEVER");
 
     pinMode(DATA_PIN, IS_SENDING ? OUTPUT : INPUT);
+    if (IS_SENDING)
+        digitalWrite(DATA_PIN, LOW); // Set initial state
 }
 
 void loop()
@@ -29,27 +28,35 @@ void loop()
     Serial.println("SENDED: 123");
 #else
     waitForHeader(0b1111000011110000, DATA_PIN, DEFAULT_SEND_FREQUENCY);
-    Serial.println("RECIVED: " + String(readByte(DATA_PIN, DEFAULT_SEND_FREQUENCY)));
+    uint8_t received = readByte(DATA_PIN, DEFAULT_SEND_FREQUENCY);
+    Serial.println(String("RECIVED: ") + String(received)); // Proper string concatenation
 #endif
 }
 
 //filepath: src\read-byte.hpp
 #pragma once
-
 #include <Arduino.h>
 
-// Reads 8 bits from the specified pin and returns them as a byte
 uint8_t readByte(int pin, int delayTime)
 {
     uint8_t out = 0;
 
+    // Record the start time once at the beginning
+    unsigned long startTime = micros();
+
+    // Read each bit, starting with the MSB
     for (uint8_t i = 0; i < 8; i++)
     {
-        // Shift left and set the current bit if pin reads HIGH
+        // Read the pin and set the corresponding bit
         out |= (digitalRead(pin) == HIGH) << i;
 
-        // Delay for the specified time
-        delay(delayTime);
+        // Calculate the target time for this bit
+        unsigned long targetTime = startTime + (i * delayTime);
+
+        // Wait until it's time to read the current bit
+        while (micros() < targetTime)
+        {
+        }
     }
 
     return out;
@@ -57,12 +64,14 @@ uint8_t readByte(int pin, int delayTime)
 
 //filepath: src\send-byte.hpp
 #pragma once
-
 #include <Arduino.h>
 
-// Sends a byte one bit at a time over a digital pin
 void sendByte(uint8_t value, int pin, int delayTime)
 {
+    // Record the start time once at the beginning
+    unsigned long startTime = micros();
+
+    // Send each bit, starting with the MSB
     for (uint8_t i = 0; i < 8; i++)
     {
         // Extract the bit at position `i`
@@ -71,10 +80,16 @@ void sendByte(uint8_t value, int pin, int delayTime)
         // Write HIGH or LOW to the pin
         digitalWrite(pin, bit ? HIGH : LOW);
 
-        // Delay for the specified time
-        delay(delayTime);
+        // Calculate the target time for this bit
+        unsigned long targetTime = startTime + (i * delayTime);
+
+        // Wait until it's time to send the current bit
+        while (micros() < targetTime)
+        {
+        }
     }
 }
+
 
 //filepath: src\user.hpp
 #pragma once
@@ -84,7 +99,6 @@ void sendByte(uint8_t value, int pin, int delayTime)
 
 //filepath: src\wait-for-header.hpp
 #pragma once
-
 #include <Arduino.h>
 
 // Waits for a specific 16-bit header sequence on the specified pin
@@ -92,29 +106,45 @@ void waitForHeader(uint16_t header, int pin, int delayTime)
 {
     uint16_t headerReceived = 0;
 
+    // Record the start time once at the beginning
+    unsigned long startTime = micros();
+
+    int receivedIndex = 0;
     // Pre-fill headerReceived by reading the first 15 bits
-    for (int receivedIndex = 0; receivedIndex < 15; receivedIndex++)
+    for (; receivedIndex < 15; receivedIndex++)
     {
         // Shift left and read the next bit
         headerReceived = (headerReceived << 1) | (digitalRead(pin) == HIGH);
 
-        // Wait for the specified time
-        delay(delayTime);
+        // Calculate the target time for this bit
+        unsigned long targetTime = startTime + (receivedIndex * delayTime);
+
+        // Wait until it's time to read the current bit
+        while (micros() < targetTime)
+        {
+        }
     }
 
     // Continuously read bits until the header is matched
     while (true)
     {
+        receivedIndex++;
         // Shift left and add the next bit
         headerReceived = (headerReceived << 1) | (digitalRead(pin) == HIGH);
+
+        // Calculate the target time for this bit
+        unsigned long targetTime = startTime + (receivedIndex * delayTime);
+
+        // Wait until it's time to read the current bit
+        while (micros() < targetTime)
+        {
+        }
 
         // Check if the header matches
         if (headerReceived == header)
         {
             return; // Header detected
         }
-
-        // Wait for the specified time
-        delay(delayTime);
     }
 }
+
